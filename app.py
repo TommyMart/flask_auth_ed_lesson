@@ -1,8 +1,12 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request, abort
+from marshmallow.validate import Length
 app = Flask(__name__)
 
 from flask_marshmallow import Marshmallow
 ma = Marshmallow(app)
+#import area
+from flask_bcrypt import Bcrypt
+bcrypt = Bcrypt(app)
 
 from flask_sqlalchemy import SQLAlchemy 
 # set the database URI via SQLAlchemy, 
@@ -43,6 +47,22 @@ def seed_db():
         priority = "High",
         date = date.today()
     )
+    # seed cli command, below card1 and card2
+    admin_user = User(
+        email = "admin@email.com",
+        password = bcrypt.generate_password_hash("password123").decode("utf-8"),
+        admin = True
+    )
+    db.session.add(admin_user)
+
+    user1 = User(
+        email = "user1@email.com",
+        password = bcrypt.generate_password_hash("123456").decode("utf-8")
+    )
+    db.session.add(user1)
+    # commit the changes
+    db.session.commit()
+    print("Table seeded")
     # Add the object as a new row to the table
     db.session.add(card2)
     # commit the changes
@@ -66,6 +86,16 @@ class Card(db.Model):
     status = db.Column(db.String())
     priority = db.Column(db.String())
 
+## model definition area, below Card model
+
+class User(db.Model):
+    __tablename__ = "USERS"
+
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(), nullable=False, unique=True)
+    password = db.Column(db.String(), nullable=False)
+    admin = db.Column(db.Boolean(), default=False)
+
 #create the Card Schema with Marshmallow, it will provide the serialization needed for converting the data into JSON
 class CardSchema(ma.Schema):
     class Meta:
@@ -76,6 +106,18 @@ class CardSchema(ma.Schema):
 card_schema = CardSchema()
 #multiple card schema, when many cards need to be retrieved
 cards_schema = CardSchema(many=True)
+
+#schema definition area, below Schema model
+
+class UserSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = User
+    #set the password's length to a minimum of 6 characters
+    password = ma.String(validate=Length(min=6))
+
+user_schema = UserSchema()
+users_schema = UserSchema(many=True)
+
 
 @app.route("/")
 def hello():
@@ -91,3 +133,26 @@ def get_cards():
     #return result in JSON format
     return jsonify(result)
    
+#route declaration area, below /cards
+@app.route("/auth/register", methods=["POST"])
+def auth_register():
+    #The request data will be loaded in a user_schema converted to JSON. request needs to be imported from
+    user_fields = user_schema.load(request.json)
+    # find the user
+    user = User.query.filter_by(email=user_fields["email"]).first()
+
+    if user:
+        # return an abort message to inform the user. That will end the request
+        return abort(400, description="Email already registered")
+    #Create the user object
+    user = User()
+    #Add the email attribute
+    user.email = user_fields["email"]
+    #Add the password attribute hashed by bcrypt
+    user.password = bcrypt.generate_password_hash(user_fields["password"]).decode("utf-8")
+    #Add it to the database and commit the changes
+    db.session.add(user)
+    db.session.commit()
+    #Return the user to check the request was successful
+    return jsonify(user_schema.dump(user))
+
