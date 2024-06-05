@@ -202,7 +202,7 @@ def card_create():
 #Includes the id parameter
 def card_delete(id):
     #get the user id invoking get_jwt_identity
-    user_id = ()
+    user_id = get_jwt_identity()
     #Find it in the db
     stmt = db.select(User).filter_by(id=user_id)
     user = db.session.scalar(stmt)
